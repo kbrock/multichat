@@ -1,4 +1,4 @@
-export GOROOT=/usr/local/Cellar/go/1.3.1/libexec/
+export GOROOT=/usr/local/Cellar/go/1.3.3/libexec/
 export GOPATH=`pwd`
 # not sure why I have to set this
 export GOBIN=$GOPATH/bin
