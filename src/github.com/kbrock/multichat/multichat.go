@@ -19,8 +19,7 @@ var (
 
 // thanks gary.burd.info/go-websocket-chat
 func defaultRoot() string {
-  p, err := build.Default.Import("github.com/kbrock/multichat", "", build.FindOnly)
-  if err == nil {
+  if p, err := build.Default.Import("github.com/kbrock/multichat", "", build.FindOnly) ; err == nil {
     return p.Dir+"/webroot"
    } else {
      return "./webroot"

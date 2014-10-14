@@ -37,7 +37,7 @@ type connection struct {
 	ws *websocket.Conn
 
 	// Buffered channel of outbound messages.
-	send chan []byte
+	send chan *message
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -50,11 +50,11 @@ func (c *connection) readPump() {
 	c.ws.SetReadDeadline(time.Now().Add(pongWait))
 	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
-		_, message, err := c.ws.ReadMessage()
-		if err != nil {
+		if _, msg, err := c.ws.ReadMessage() ; err == nil {
+			h.broadcast <- &message{sender:c.name,bytes:msg}
+		} else {
 			break
 		}
-		h.broadcast <- message
 	}
 }
 
@@ -66,22 +66,22 @@ func (c *connection) write(mt int, payload []byte) error {
 
 // writePump pumps messages from the hub to the websocket connection.
 func (c *connection) writePump() {
-	ticker := time.NewTicker(pingPeriod)
+	pingTicker := time.NewTicker(pingPeriod)
 	defer func() {
-		ticker.Stop()
+		pingTicker.Stop()
 		c.ws.Close()
 	}()
 	for {
 		select {
-		case message, ok := <-c.send:
+		case msg, ok := <-c.send:
 			if !ok {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			if err := c.write(websocket.TextMessage, message); err != nil {
+			if err := c.write(websocket.TextMessage, msg.bytes); err != nil {
 				return
 			}
-		case <-ticker.C:
+		case <-pingTicker.C:
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
 				return
 			}
@@ -100,7 +100,7 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	c := &connection{send: make(chan []byte, 256), ws: ws}
+	c := &connection{send: make(chan *message, 256), ws: ws}
 	h.register <- c
 	go c.writePump()
 	c.readPump()
