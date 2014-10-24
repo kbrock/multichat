@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"sync"
+	"strconv"
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
+
+	deferPeriod = 250 * time.Millisecond
 
 	// Maximum message size allowed from peer.
 	maxMessageSize = 512
@@ -66,11 +70,18 @@ func (c *connection) write(mt int, payload []byte) error {
 
 // writePump pumps messages from the hub to the websocket connection.
 func (c *connection) writePump() {
+	deferTicker := time.NewTicker(deferPeriod)
 	pingTicker := time.NewTicker(pingPeriod)
+
+	var mutex = &sync.Mutex{}
+	var outstanding *message = nil
+
 	defer func() {
 		pingTicker.Stop()
+		deferTicker.Stop()
 		c.ws.Close()
 	}()
+
 	for {
 		select {
 		case msg, ok := <-c.send:
@@ -78,8 +89,25 @@ func (c *connection) writePump() {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			if err := c.write(websocket.TextMessage, msg.bytes); err != nil {
-				return
+			mutex.Lock()
+			if outstanding != nil{
+				outstanding.merge(msg)
+			} else {
+				outstanding = msg.clone()
+			}
+			mutex.Unlock()
+		case <-deferTicker.C:
+			mutex.Lock()
+			var tosend *message = nil
+			if outstanding != nil {
+		 		tosend = outstanding
+		 		outstanding = nil
+			}
+			mutex.Unlock()
+			if (tosend != nil) {
+	 			if err := c.write(websocket.TextMessage, tosend.allBytes()); err != nil {
+		 			return
+			 	}
 			}
 		case <-pingTicker.C:
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
@@ -88,6 +116,9 @@ func (c *connection) writePump() {
 		}
 	}
 }
+
+// assign a random "name" ot each new connection
+var debugCounter = 1
 
 // serverWs handles websocket requests from the peer.
 func serveWs(w http.ResponseWriter, r *http.Request) {
@@ -100,7 +131,8 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	c := &connection{send: make(chan *message, 256), ws: ws}
+	c := &connection{send: make(chan *message, 256), ws: ws, name: strconv.Itoa(debugCounter)}
+	debugCounter += 1
 	h.register <- c
 	go c.writePump()
 	c.readPump()

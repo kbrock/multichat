@@ -2,17 +2,15 @@
 package main
 
 import (
-//  "bytes"
 	"flag"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"io"
-//	"math/rand"
 	"net/http"
 	"runtime"
 	"strconv"
-//	"sync"
 	"time"
+	"bytes"
 )
 
 var (
@@ -22,13 +20,19 @@ var (
 	duration = flag.Duration("time", 20 * time.Second, "number of seconds to run everything")
 )
 
-// Counters using channels
-var globalMessageSentChan chan int64
-var globalMessageReadChan chan int64
-var globalMessageErrChan chan int64
+var (
+	// counters
+	globalMessageSentChan chan int64
+	globalMessageReadChan chan int64
+	globalMessageCountChan chan int64
+	globalMessageErrChan chan int64
+	// shutting down
+	globalStopSendChan chan int64
+	globalStopReadChan chan int64
+)
 
 func createCounter() chan int64 {
-  ch := make(chan int64)
+	ch := make(chan int64)
 
 	go func(c chan int64) {
 		var counter int64 = 0
@@ -41,9 +45,6 @@ func createCounter() chan int64 {
 	return ch;
 }
 
-// ensure all websockets have received their own messages
-//var done sync.WaitGroup
-
 func main() {
 	flag.Parse()
 	runtime.GOMAXPROCS(1)
@@ -51,22 +52,35 @@ func main() {
 
 	globalMessageSentChan = createCounter()
 	globalMessageReadChan = createCounter()
-	globalMessageErrChan = createCounter()
+	globalMessageCountChan = createCounter()
+	globalMessageErrChan  = createCounter()
+	globalStopSendChan    = make(chan int64)
+	globalStopReadChan    = make(chan int64)
+
 	for i := 0; i < *numClients; i++ {
-//		done.Add(1)
 		go createWebSocketClient(i)
 	}
 
-//	fmt.Println("Waiting for messages to be sent")
-//	done.Wait()
 	fmt.Println("duration ", *duration)
 	fmt.Println("clients ", *numClients)
 
-	// We let the test run for a bit and then kill everything
 	time.Sleep(*duration)
+	fmt.Println("STOP SEND")
+	for i :=0; i < *numClients; i++ {
+		globalStopSendChan<-1
+	}
+	// give the sockets time to receive messages
+	time.Sleep(500*time.Millisecond)
+
+	fmt.Println("STOP RECEIVE")
+	for i :=0; i < *numClients; i++ {
+		globalStopReadChan<-1
+	}
+	time.Sleep(100*time.Millisecond)
 
 	fmt.Println(<-globalMessageSentChan, " messages sent")
 	fmt.Println(<-globalMessageReadChan, " messages read")
+	fmt.Println(<-globalMessageCountChan, " messages accounted for")
 	fmt.Println(<-globalMessageErrChan, " message read errors")
 	fmt.Println()
 	fmt.Println(runtime.NumCPU(), " cpus")
@@ -74,58 +88,63 @@ func main() {
 	fmt.Println(runtime.NumGoroutine(), "go routines")
 }
 
+func readPump(ws *websocket.Conn, eCh chan<- error) { //, ch chan[]byte) {
+	for {
+		if _, data, err := ws.ReadMessage(); err != nil {
+			eCh <- err
+			return
+		} else {
+			numBytes := bytes.IndexByte(data,':')
+			var xi int
+			if numBytes >= 0 {
+				xi, _ = strconv.Atoi(string(data[0:numBytes]))
+			} else {
+				xi = 1
+			}
+			<-globalMessageReadChan
+			for i := 0 ; i < xi ; i++ {
+				<-globalMessageCountChan
+			}
+			// ch <- slows things down. for metrics remove, for info keep
+			// send data we received
+			//ch <- data
+		}
+	}
+}
+
 func createWebSocketClient(id int) {
 	url := "ws://" + *service
-	msg := []byte("" + *message + " " + strconv.Itoa(id))
+	msg := []byte(*message + "[" + strconv.Itoa(id) + "]")
 
 	d := &websocket.Dialer{HandshakeTimeout: time.Duration(10 * time.Second)}
 	ws, resp, err := d.Dial(url, http.Header{"Origin": {"http://localhost:8080"}})
 
 	if err != nil {
+		<-globalMessageErrChan
 		fmt.Printf("Dial failed: %s\n (number: %v)\n%v", err.Error(), id, resp)
 		return
 	}
 
-	// var loaded bool = false
-	// defer func() {
-	// 	if !loaded {
-	// 		fmt.Println(id, "failed to work")
-	// 		done.Done()
-	// 	}
-	// }()
 	defer ws.Close()
-
-	ch := make(chan []byte)
+	//ch := make(chan []byte)
 	eCh := make(chan error)
+	// read from socket
+	go readPump(ws, eCh) //, ch)
 
-	// Start a goroutine to read from our net connection
-	go func(ch chan []byte, eCh chan error) {
-		for {
-			<-globalMessageReadChan
-			if _, data, err := ws.ReadMessage(); err != nil {
-				eCh <- err
-				return
-			} else {
-				// send data we received
-				ch <- data
-			}
-		}
-	}(ch, eCh)
-
+	// we're going to send 20 times / second
+	sendMessageTimer := time.NewTicker(50 * time.Millisecond) //time.Duration(rand.Int31n(500)) * time.Millisecond)
+	defer sendMessageTimer.Stop()
 	for {
-		timer := time.NewTimer(50 * time.Millisecond) //time.Duration(rand.Int31n(500)) * time.Millisecond)
-
 		select {
 		// recieved data on the connection
-		case _ = <-ch:
-			//if ( bytes.Equal(msg, newMsg)){
-			// if !loaded {
-			// 	loaded = true
-			// 	done.Done()
-			// }
-
-		// Do something with the data
-		// This case means we got an error and the goroutine has finished
+		// case count := <-ch:
+		// 	fmt.Println("<- ", count)
+		case <- globalStopSendChan:
+			sendMessageTimer.Stop()
+		case <- globalStopReadChan:
+			//fmt.Println("BYE")
+			return
+		// error received
 		case err := <-eCh:
 			// handle our error then exit for loop
 			<-globalMessageErrChan
@@ -133,25 +152,16 @@ func createWebSocketClient(id int) {
 			if err != io.EOF { // simple closed connection
 				fmt.Println(err, "receive", id)
 			}
-
 			return
 		// This will timeout on the read.
-		case <-timer.C:
-			// do nothing? this is just so we can time out if we need to.
-			// you probably don't even need to have this here unless you want
-			// do something specifically on the timeout.
-
-			<-globalMessageSentChan
-
-			//if _, err := ws.Write([]byte(msg)); err != nil {
+		case <-sendMessageTimer.C:
 			if err := ws.WriteMessage(websocket.TextMessage, msg); err != nil {
-  			fmt.Println(err, "send", id)
+				fmt.Println(err, "send", id)
+				<-globalMessageErrChan
 				return
+			} else {
+				<-globalMessageSentChan
 			}
-
-			// case <-endtimer.C:
-			// 	fmt.Printf("ending %v", id)
-			// 	return
 		}
 	}
 }
