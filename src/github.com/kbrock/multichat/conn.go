@@ -44,6 +44,19 @@ type connection struct {
 	send chan *message
 }
 
+// assign a random "name" to each new connection
+var debugCounter = 0
+func NewConnection(ws *websocket.Conn) *connection {
+	name := strconv.Itoa(debugCounter)
+  debugCounter += 1
+	c := connection{
+		name: name,
+		ws: ws,
+		send: make(chan *message, 256),
+	}
+	return &c
+}
+
 // readPump pumps messages from the websocket connection to the hub.
 func (c *connection) readPump() {
 	defer func() {
@@ -117,9 +130,6 @@ func (c *connection) writePump() {
 	}
 }
 
-// assign a random "name" ot each new connection
-var debugCounter = 1
-
 // serverWs handles websocket requests from the peer.
 func serveWs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -131,8 +141,7 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
-	c := &connection{send: make(chan *message, 256), ws: ws, name: strconv.Itoa(debugCounter)}
-	debugCounter += 1
+	c := NewConnection(ws)
 	h.register <- c
 	go c.writePump()
 	c.readPump()
