@@ -80,9 +80,19 @@ func main() {
 	go sendAll(*numClients, globalStopReadChan)
 	time.Sleep(100*time.Millisecond)
 
-	fmt.Println(<-globalMessageSentChan, " messages sent")
-	fmt.Println(<-globalMessageReadChan, " messages read")
-	fmt.Println(<-globalMessageCountChan, " messages accounted for")
+	sent   := <-globalMessageSentChan
+	totMsg := <-globalMessageCountChan
+	expectedCount := int64(*numClients) * sent
+
+	fmt.Println(sent, " messages sent")
+	fmt.Println(<-globalMessageReadChan, " messages received")
+	fmt.Println(totMsg, " total messages ")
+	if (totMsg == expectedCount) {
+		fmt.Println("MATCH")
+	} else {
+		fmt.Println("MISMATCH", expectedCount)
+  }
+	fmt.Println()
 	fmt.Println(<-globalMessageErrChan, " message read errors")
 	fmt.Println()
 	fmt.Println(runtime.NumCPU(), " cpus")
