@@ -3,3 +3,5 @@ export GOPATH=`pwd`
 # not sure why I have to set this
 export GOBIN=$GOPATH/bin
 export PATH=$GOPATH/bin:$PATH
+
+ulimit -n 8192
