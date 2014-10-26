@@ -67,7 +67,7 @@ func (c *connection) readPump() {
 	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
 		if _, msg, err := c.ws.ReadMessage() ; err == nil {
-			h.broadcast <- &message{sender:c.name,bytes:msg}
+			h.broadcast <- NewMessage(c.name, msg)
 		} else {
 			break
 		}
