@@ -37,6 +37,7 @@ type connection struct {
 
 	// Buffered channel of outbound messages.
 	send chan *message
+	buffer chan *message
 }
 
 // assign a random "name" to each new connection
@@ -49,6 +50,7 @@ func NewConnection(ws *websocket.Conn) *connection {
 		ws: ws,
 		send: make(chan *message, 256),
 	}
+	c.buffer = c.send
 	return &c
 }
 
@@ -76,7 +78,7 @@ func (c *connection) write(mt int, payload []byte) error {
 	return c.ws.WriteMessage(mt, payload)
 }
 
-// writePump pumps messages from the hub to the websocket connection.
+// writePump pumps messages from the buffer to the websocket connection.
 func (c *connection) writePump() {
 	deferTicker := time.NewTicker(deferPeriod)
 	pingTicker := time.NewTicker(pingPeriod)
@@ -91,7 +93,7 @@ func (c *connection) writePump() {
 
 	for {
 		select {
-		case msg, ok := <-c.send:
+		case msg, ok := <-c.buffer:
 			if !ok {
 				c.write(websocket.CloseMessage, []byte{})
 				return
