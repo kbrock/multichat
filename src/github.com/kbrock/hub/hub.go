@@ -14,10 +14,17 @@ type hub struct {
 
 	// Unregister requests from connections.
 	unregister chan *connection
+
+	quit chan int
 }
 
 func RunHub() {
 	go h.run()
+}
+
+func QuitHub() {
+	h.quit = make(chan int)
+	h.quit <- 1
 }
 
 var h = hub{
@@ -46,6 +53,8 @@ func (h *hub) run() {
 					delete(h.connections, c)
 				}
 			}
+		case <-h.quit:
+			return
 		}
 	}
 }

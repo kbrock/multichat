@@ -8,22 +8,6 @@ type message struct {
   bytes []byte
 }
 
-func (m *message) merge(src *message) {
-  if src.count == 0 {
-    m.count += 1
-  } else {
-    m.count += src.count
-  }
-}
-
-func (m *message) Merge2(src *message) *message {
-  if m.IsEmpty() {
-    return &message{sender:src.sender, bytes: src.bytes, count: src.count}
-  } else {
-    return &message{sender:m.sender, bytes: m.bytes, count: m.count + src.count}
-  }
-}
-
 func EmptyMessage() *message {
   return &message{}
 }
@@ -36,7 +20,15 @@ func NewMessage(sender string, bytes []byte) *message{
   }
 }
 
-func (m *message) allBytes() []byte {
+func (m *message) Merge(src *message) *message {
+  if m.IsEmpty() {
+    return &message{sender:src.sender, bytes: src.bytes, count: src.count}
+  } else {
+    return &message{sender:m.sender, bytes: m.bytes, count: m.count + src.count}
+  }
+}
+
+func (m *message) Bytes() []byte {
   if m.count <= 1 {
     return m.bytes
   } else {
@@ -49,15 +41,10 @@ func (m *message) allBytes() []byte {
   }
 }
 
-// TODO: Str
-func (m *message) str() string {
+func (m *message) Str() string {
   return string(m.bytes)
 }
 
-// going away
-func (m *message) clone() *message {
-  return &message{sender: m.sender, count: 1, bytes: m.bytes};
-}
 
 func (m *message) IsEmpty() bool {
   return m.count == 0

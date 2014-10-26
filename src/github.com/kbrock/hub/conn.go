@@ -81,7 +81,7 @@ func (c *connection) writePump() {
 	deferTicker := time.NewTicker(deferPeriod)
 	pingTicker := time.NewTicker(pingPeriod)
 
-	var outstanding *message = nil
+	outstanding := EmptyMessage()
 
 	defer func() {
 		pingTicker.Stop()
@@ -96,21 +96,13 @@ func (c *connection) writePump() {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			if outstanding != nil{
-				outstanding.merge(msg)
-			} else {
-				outstanding = msg.clone()
-			}
+			outstanding = outstanding.Merge(msg)
 		case <-deferTicker.C:
-			var tosend *message = nil
-			if outstanding != nil {
-		 		tosend = outstanding
-		 		outstanding = nil
-			}
-			if (tosend != nil) {
-	 			if err := c.write(websocket.TextMessage, tosend.allBytes()); err != nil {
+			if (!outstanding.IsEmpty()) {
+	 			if err := c.write(websocket.TextMessage, outstanding.Bytes()); err != nil {
 		 			return
 			 	}
+			 	outstanding = EmptyMessage()
 			}
 		case <-pingTicker.C:
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
