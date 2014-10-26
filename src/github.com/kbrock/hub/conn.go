@@ -80,14 +80,10 @@ func (c *connection) write(mt int, payload []byte) error {
 
 // writePump pumps messages from the buffer to the websocket connection.
 func (c *connection) writePump() {
-	deferTicker := time.NewTicker(deferPeriod)
 	pingTicker := time.NewTicker(pingPeriod)
-
-	outstanding := EmptyMessage()
 
 	defer func() {
 		pingTicker.Stop()
-		deferTicker.Stop()
 		c.ws.Close()
 	}()
 
@@ -98,13 +94,8 @@ func (c *connection) writePump() {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			outstanding = outstanding.Merge(msg)
-		case <-deferTicker.C:
-			if (!outstanding.IsEmpty()) {
-	 			if err := c.write(websocket.TextMessage, outstanding.Bytes()); err != nil {
-		 			return
-			 	}
-			 	outstanding = EmptyMessage()
+			if err := c.write(websocket.TextMessage, msg.Bytes()); err != nil {
+				return
 			}
 		case <-pingTicker.C:
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
