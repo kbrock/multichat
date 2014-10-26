@@ -6,11 +6,14 @@ import (
 	"net/http"
  	"log"
   "github.com/kbrock/hub"
+  "github.com/kbrock/ezprof"
 )
 
 var (
 	addr    = flag.String("addr", ":8080", "http service address")
   webroot = flag.String("root", defaultRoot(), "path to webroot")
+  cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+  memprofile = flag.String("memprofile", "", "write memory profile to this file")
 )
 
 // thanks gary.burd.info/go-websocket-chat
@@ -24,6 +27,7 @@ func defaultRoot() string {
 
 func main() {
 	flag.Parse()
+  ezprof.StartProfiler(*cpuprofile, *memprofile)
 	hub.RunHub()
 	http.HandleFunc("/ws", hub.ServeWs)
   http.Handle("/", http.FileServer(http.Dir(*webroot)))
@@ -32,4 +36,5 @@ func main() {
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
+  ezprof.CleanupProfiler(*cpuprofile, *memprofile)
 }
