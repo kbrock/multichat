@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"time"
-	"sync"
 	"strconv"
 )
 
@@ -86,7 +85,6 @@ func (c *connection) writePump() {
 	deferTicker := time.NewTicker(deferPeriod)
 	pingTicker := time.NewTicker(pingPeriod)
 
-	var mutex = &sync.Mutex{}
 	var outstanding *message = nil
 
 	defer func() {
@@ -102,21 +100,17 @@ func (c *connection) writePump() {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			mutex.Lock()
 			if outstanding != nil{
 				outstanding.merge(msg)
 			} else {
 				outstanding = msg.clone()
 			}
-			mutex.Unlock()
 		case <-deferTicker.C:
-			mutex.Lock()
 			var tosend *message = nil
 			if outstanding != nil {
 		 		tosend = outstanding
 		 		outstanding = nil
 			}
-			mutex.Unlock()
 			if (tosend != nil) {
 	 			if err := c.write(websocket.TextMessage, tosend.allBytes()); err != nil {
 		 			return
