@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 	"bytes"
+	"github.com/kbrock/ezprof"
 )
 
 var (
@@ -18,6 +19,8 @@ var (
 	service = flag.String("service", "localhost:8080/ws", "websocket address to access")
 	numClients = flag.Int("clients", 20, "number of clients") //3000
 	duration = flag.Duration("time", 20 * time.Second, "number of seconds to run everything")
+  cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+  memprofile = flag.String("memprofile", "", "write memory profile to this file")
 )
 
 var (
@@ -66,9 +69,9 @@ func createClients() {
 func removeClients() {
 	fmt.Println(*numClients, " clients exiting 0.6s")
 	go sendAll(*numClients, globalStopSendChan)
-	time.Sleep(500*time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 	go sendAll(*numClients, globalStopReadChan)
-	time.Sleep(100*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 }
 
 // send a message to all clients (to say stop sending / stop reading)
@@ -112,11 +115,14 @@ func main() {
 	//rand.Seed(time.Now().Unix())
 
 	createAllCounters()
+  ezprof.StartProfiler(*cpuprofile, *memprofile)
 	createClients()
 	time.Sleep(*duration)
+  ezprof.CleanupProfiler(*cpuprofile, *memprofile)
 	removeClients()
 	displayCounters()
 	displayStats()
+
 }
 
 func readPump(ws *websocket.Conn, eCh chan<- error) { //, ch chan[]byte) {
