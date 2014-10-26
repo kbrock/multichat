@@ -31,6 +31,15 @@ var (
 	globalStopReadChan chan int64
 )
 
+func createAllCounters() {
+	globalMessageSentChan = createCounter()
+	globalMessageReadChan = createCounter()
+	globalMessageCountChan = createCounter()
+	globalMessageErrChan  = createCounter()
+	globalStopSendChan    = make(chan int64)
+	globalStopReadChan    = make(chan int64)
+}
+
 func createCounter() chan int64 {
 	ch := make(chan int64)
 
@@ -45,10 +54,56 @@ func createCounter() chan int64 {
 	return ch;
 }
 
+func createClients() {
+	fmt.Println()
+	fmt.Println(*numClients," clients ", *duration)	
+
+	for i := 0; i < *numClients; i++ {
+		go createWebSocketClient(i)
+	}
+}
+
+func removeClients() {
+	fmt.Println(*numClients, " clients exiting 0.6s")
+	go sendAll(*numClients, globalStopSendChan)
+	time.Sleep(500*time.Millisecond)
+	go sendAll(*numClients, globalStopReadChan)
+	time.Sleep(100*time.Millisecond)
+}
+
+// send a message to all clients (to say stop sending / stop reading)
 func sendAll(count int, c chan int64) {
 	for i :=0; i < count; i++ {
 		c <- 1
 	}
+}
+
+func displayCounters() {
+	fmt.Println()
+	sent   := <-globalMessageSentChan
+	totMsg := <-globalMessageCountChan
+	expectedCount := int64(*numClients) * sent
+	fmt.Println(sent, " msgs sent")
+	fmt.Println(<-globalMessageReadChan, " packets received")
+	if (totMsg == expectedCount) {
+		fmt.Println(totMsg, " msgs received (match)")
+	} else {
+		fmt.Println(totMsg, " msgs received (MISMATCH)")
+		fmt.Println(expectedCount, " msgs expected")
+  }
+
+	numErrors := <-globalMessageErrChan
+	if (numErrors != 0) {
+		fmt.Println()
+		fmt.Println(numErrors, " errors")
+	}
+}
+
+func displayStats() {
+	fmt.Println()
+	fmt.Println(runtime.NumCPU(), " cpus")
+	fmt.Println(runtime.NumCgoCall(), " go calls")
+	fmt.Println(runtime.NumGoroutine(), "go routines")
 }
 
 func main() {
@@ -56,48 +111,12 @@ func main() {
 	runtime.GOMAXPROCS(1)
 	//rand.Seed(time.Now().Unix())
 
-	globalMessageSentChan = createCounter()
-	globalMessageReadChan = createCounter()
-	globalMessageCountChan = createCounter()
-	globalMessageErrChan  = createCounter()
-	globalStopSendChan    = make(chan int64)
-	globalStopReadChan    = make(chan int64)
-
-	for i := 0; i < *numClients; i++ {
-		go createWebSocketClient(i)
-	}
-
-	fmt.Println("duration ", *duration)
-	fmt.Println("clients ", *numClients)
-
+	createAllCounters()
+	createClients()
 	time.Sleep(*duration)
-
-	fmt.Println("STOP SEND")
-	go sendAll(*numClients, globalStopSendChan)
-	time.Sleep(500*time.Millisecond)
-
-	fmt.Println("STOP RECEIVE")
-	go sendAll(*numClients, globalStopReadChan)
-	time.Sleep(100*time.Millisecond)
-
-	sent   := <-globalMessageSentChan
-	totMsg := <-globalMessageCountChan
-	expectedCount := int64(*numClients) * sent
-
-	fmt.Println(sent, " messages sent")
-	fmt.Println(<-globalMessageReadChan, " messages received")
-	fmt.Println(totMsg, " total messages ")
-	if (totMsg == expectedCount) {
-		fmt.Println("MATCH")
-	} else {
-		fmt.Println("MISMATCH", expectedCount)
-  }
-	fmt.Println()
-	fmt.Println(<-globalMessageErrChan, " message read errors")
-	fmt.Println()
-	fmt.Println(runtime.NumCPU(), " cpus")
-	fmt.Println(runtime.NumCgoCall(), " go calls")
-	fmt.Println(runtime.NumGoroutine(), "go routines")
+	removeClients()
+	displayCounters()
+	displayStats()
 }
 
 func readPump(ws *websocket.Conn, eCh chan<- error) { //, ch chan[]byte) {
