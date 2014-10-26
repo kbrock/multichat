@@ -1,8 +1,4 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-package main
+package hub
 
 // hub maintains the set of active connections and broadcasts messages to the
 // connections.
@@ -18,6 +14,10 @@ type hub struct {
 
 	// Unregister requests from connections.
 	unregister chan *connection
+}
+
+func RunHub() {
+	go h.run()
 }
 
 var h = hub{

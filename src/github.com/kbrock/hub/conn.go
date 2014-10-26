@@ -1,8 +1,4 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
-package main
+package hub
 
 import (
 	"github.com/gorilla/websocket"
@@ -124,8 +120,8 @@ func (c *connection) writePump() {
 	}
 }
 
-// serverWs handles websocket requests from the peer.
-func serveWs(w http.ResponseWriter, r *http.Request) {
+// serveWs handles websocket requests from the peer.
+func ServeWs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
 		http.Error(w, "Method not allowed", 405)
 		return
