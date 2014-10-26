@@ -45,6 +45,12 @@ func createCounter() chan int64 {
 	return ch;
 }
 
+func sendAll(count int, c chan int64) {
+	for i :=0; i < count; i++ {
+		c <- 1
+	}
+}
+
 func main() {
 	flag.Parse()
 	runtime.GOMAXPROCS(1)
@@ -65,17 +71,13 @@ func main() {
 	fmt.Println("clients ", *numClients)
 
 	time.Sleep(*duration)
+
 	fmt.Println("STOP SEND")
-	for i :=0; i < *numClients; i++ {
-		globalStopSendChan<-1
-	}
-	// give the sockets time to receive messages
+	go sendAll(*numClients, globalStopSendChan)
 	time.Sleep(500*time.Millisecond)
 
 	fmt.Println("STOP RECEIVE")
-	for i :=0; i < *numClients; i++ {
-		globalStopReadChan<-1
-	}
+	go sendAll(*numClients, globalStopReadChan)
 	time.Sleep(100*time.Millisecond)
 
 	fmt.Println(<-globalMessageSentChan, " messages sent")
