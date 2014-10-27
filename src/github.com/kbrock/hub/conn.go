@@ -48,9 +48,10 @@ func NewConnection(ws *websocket.Conn) *connection {
 	c := connection{
 		name: name,
 		ws: ws,
+		// GOAL: no buffering here
 		send: make(chan *message, 256),
+		buffer: make (chan *message),
 	}
-	c.buffer = c.send
 	return &c
 }
 
@@ -76,6 +77,37 @@ func (c *connection) readPump() {
 func (c *connection) write(mt int, payload []byte) error {
 	c.ws.SetWriteDeadline(time.Now().Add(writeWait))
 	return c.ws.WriteMessage(mt, payload)
+}
+
+// aggregator takes messages from broadcast to buffer
+func (c *connection) aggregator() {
+  msg := EmptyMessage()
+  timer := time.NewTimer(0)
+
+  var timerCh <-chan time.Time
+  var outCh chan *message
+
+  for {
+    select {
+    case e, ok := <-c.send:
+			if !ok {
+				log.Println("NOT OK")
+				close(c.buffer)
+				return
+			}
+      msg = msg.Merge(e)
+      if timerCh == nil {
+        timer.Reset(deferPeriod)
+        timerCh = timer.C
+      }
+    case <-timerCh:
+      outCh = c.buffer
+      timerCh = nil
+    case outCh <- msg:
+      msg = EmptyMessage()
+      outCh = nil
+    }
+  }
 }
 
 // writePump pumps messages from the buffer to the websocket connection.
@@ -119,5 +151,6 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	c := NewConnection(ws)
 	h.register <- c
 	go c.writePump()
+	go c.aggregator()
 	c.readPump()
 }
