@@ -37,6 +37,7 @@ type connection struct {
 
 	// Buffered channel of outbound messages.
 	send chan *message
+	buffer chan *message
 }
 
 // assign a random "name" to each new connection
@@ -47,7 +48,9 @@ func NewConnection(ws *websocket.Conn) *connection {
 	c := connection{
 		name: name,
 		ws: ws,
+		// GOAL: no buffering here
 		send: make(chan *message, 256),
+		buffer: make (chan *message),
 	}
 	return &c
 }
@@ -76,33 +79,55 @@ func (c *connection) write(mt int, payload []byte) error {
 	return c.ws.WriteMessage(mt, payload)
 }
 
-// writePump pumps messages from the hub to the websocket connection.
-func (c *connection) writePump() {
-	deferTicker := time.NewTicker(deferPeriod)
-	pingTicker := time.NewTicker(pingPeriod)
+// aggregator takes messages from broadcast to buffer
+func (c *connection) aggregator() {
+  msg := EmptyMessage()
+  timer := time.NewTimer(0)
 
-	outstanding := EmptyMessage()
+  var timerCh <-chan time.Time
+  var outCh chan *message
+
+  for {
+    select {
+    case e, ok := <-c.send:
+			if !ok {
+				log.Println("NOT OK")
+				close(c.buffer)
+				return
+			}
+      msg = msg.Merge(e)
+      if timerCh == nil {
+        timer.Reset(deferPeriod)
+        timerCh = timer.C
+      }
+    case <-timerCh:
+      outCh = c.buffer
+      timerCh = nil
+    case outCh <- msg:
+      msg = EmptyMessage()
+      outCh = nil
+    }
+  }
+}
+
+// writePump pumps messages from the buffer to the websocket connection.
+func (c *connection) writePump() {
+	pingTicker := time.NewTicker(pingPeriod)
 
 	defer func() {
 		pingTicker.Stop()
-		deferTicker.Stop()
 		c.ws.Close()
 	}()
 
 	for {
 		select {
-		case msg, ok := <-c.send:
+		case msg, ok := <-c.buffer:
 			if !ok {
 				c.write(websocket.CloseMessage, []byte{})
 				return
 			}
-			outstanding = outstanding.Merge(msg)
-		case <-deferTicker.C:
-			if (!outstanding.IsEmpty()) {
-	 			if err := c.write(websocket.TextMessage, outstanding.Bytes()); err != nil {
-		 			return
-			 	}
-			 	outstanding = EmptyMessage()
+			if err := c.write(websocket.TextMessage, msg.Bytes()); err != nil {
+				return
 			}
 		case <-pingTicker.C:
 			if err := c.write(websocket.PingMessage, []byte{}); err != nil {
@@ -126,5 +151,6 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	c := NewConnection(ws)
 	h.register <- c
 	go c.writePump()
+	go c.aggregator()
 	c.readPump()
 }
