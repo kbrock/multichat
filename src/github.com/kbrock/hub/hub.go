@@ -47,12 +47,8 @@ func (h *hub) run() {
 			}
 		case m := <-h.broadcast:
 			for c := range h.connections {
-				select {
-				case c.send <- m:
-				default:
-					close(c.send)
-					delete(h.connections, c)
-				}
+				// NOTE: blocking on send
+				c.send <- m
 			}
 		case <-h.quit:
 			return

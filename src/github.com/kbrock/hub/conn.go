@@ -93,8 +93,8 @@ func (c *connection) aggregator() {
   for {
     select {
     case e, ok := <-c.send:
+		// un registered, time to go away
 		if !ok {
-			log.Println("NOT OK")
 			close(c.buffer)
 			timer.Stop()
 			return
