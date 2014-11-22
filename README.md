@@ -15,3 +15,20 @@ Would like to send state, but instead of sending out a packet per packet in, wou
 - dedup packets so 
   a=1 b=2 a=3 ==> b=2 a=3
 
+STATUS
+
+reading:
+    http://abdullin.com/long/happypancake/#toc_8
+
+agregator:
+    close to implementing http://blog.gopheracademy.com/day-24-channel-buffering-patterns
+
+    number of connections went down.
+    want to remove buffers
+    think this was caused by memory / copies
+    adding profiling to figure out issue on server
+
+    not sure if lost packets are on the server or client
+profiling:
+    started to explore http://blog.golang.org/profiling-go-programs
+    want to pull out into own package (ezprofile)
