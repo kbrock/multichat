@@ -40,6 +40,7 @@ func (h *hub) run() {
 		case c := <-h.register:
 			h.connections[c] = true
 		case c := <-h.unregister:
+			// if we still have this connection, remove it
 			if _, ok := h.connections[c]; ok {
 				delete(h.connections, c)
 				close(c.send)

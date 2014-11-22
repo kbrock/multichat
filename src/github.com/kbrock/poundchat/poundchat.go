@@ -19,8 +19,9 @@ var (
 	service = flag.String("service", "localhost:8080/ws", "websocket address to access")
 	numClients = flag.Int("clients", 20, "number of clients") //3000
 	duration = flag.Duration("time", 20 * time.Second, "number of seconds to run everything")
-  cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-  memprofile = flag.String("memprofile", "", "write memory profile to this file")
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+	memprofile = flag.String("memprofile", "", "write memory profile to this file")
+	sendFrequency = flag.Duration("sendfrequency", 50 * time.Millisecond, "how often to send messages")
 )
 
 var (
@@ -115,10 +116,10 @@ func main() {
 	//rand.Seed(time.Now().Unix())
 
 	createAllCounters()
-  ezprof.StartProfiler(*cpuprofile, *memprofile)
+	ezprof.StartProfiler(*cpuprofile, *memprofile)
 	createClients()
 	time.Sleep(*duration)
-  ezprof.CleanupProfiler(*cpuprofile, *memprofile)
+	ezprof.CleanupProfiler(*cpuprofile, *memprofile)
 	removeClients()
 	displayCounters()
 	displayStats()
@@ -169,7 +170,7 @@ func createWebSocketClient(id int) {
 	go readPump(ws, eCh) //, ch)
 
 	// we're going to send 20 times / second
-	sendMessageTimer := time.NewTicker(50 * time.Millisecond) //time.Duration(rand.Int31n(500)) * time.Millisecond)
+	sendMessageTimer := time.NewTicker(*sendFrequency) //time.Duration(rand.Int31n(500)) * time.Millisecond)
 	defer sendMessageTimer.Stop()
 	for {
 		select {

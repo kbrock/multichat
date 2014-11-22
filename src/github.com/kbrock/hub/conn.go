@@ -36,7 +36,10 @@ type connection struct {
 	ws *websocket.Conn
 
 	// Buffered channel of outbound messages.
+	//spray2coalesce
 	send chan *message
+	// channel of message ready to send to websocket
+	//coalesce2receiver
 	buffer chan *message
 }
 
@@ -44,7 +47,7 @@ type connection struct {
 var debugCounter = 0
 func NewConnection(ws *websocket.Conn) *connection {
 	name := strconv.Itoa(debugCounter)
-  debugCounter += 1
+	debugCounter += 1
 	c := connection{
 		name: name,
 		ws: ws,
@@ -90,11 +93,12 @@ func (c *connection) aggregator() {
   for {
     select {
     case e, ok := <-c.send:
-			if !ok {
-				log.Println("NOT OK")
-				close(c.buffer)
-				return
-			}
+		if !ok {
+			log.Println("NOT OK")
+			close(c.buffer)
+			timer.Stop()
+			return
+		}
       msg = msg.Merge(e)
       if timerCh == nil {
         timer.Reset(deferPeriod)
