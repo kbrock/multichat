@@ -22,10 +22,11 @@ func NewMessage(sender string, bytes []byte) *message{
 
 func (m *message) Merge(src *message) *message {
   if m.IsEmpty() {
-    return &message{sender:src.sender, bytes: src.bytes, count: src.count}
-  } else {
-    return &message{sender:m.sender, bytes: m.bytes, count: m.count + src.count}
+    m.sender = src.sender
+    m.bytes = src.bytes
   }
+  m.count += src.count
+  return m
 }
 
 func (m *message) Bytes() []byte {

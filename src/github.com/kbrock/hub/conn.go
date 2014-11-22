@@ -68,8 +68,10 @@ func (c *connection) readPump() {
 	c.ws.SetReadDeadline(time.Now().Add(pongWait))
 	c.ws.SetPongHandler(func(string) error { c.ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 	for {
-		if _, msg, err := c.ws.ReadMessage() ; err == nil {
-			h.broadcast <- NewMessage(c.name, msg)
+		if _, buff, err := c.ws.ReadMessage() ; err == nil {
+			msg := NewMessage(c.name, buff)
+    		// message on out channel still outstanding need new one
+			h.broadcast <- msg
 		} else {
 			break
 		}
@@ -108,6 +110,7 @@ func (c *connection) aggregator() {
       outCh = c.buffer
       timerCh = nil
     case outCh <- msg:
+    	// message on out channel still outstanding need new one
       msg = EmptyMessage()
       outCh = nil
     }
