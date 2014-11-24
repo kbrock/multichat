@@ -1,33 +1,50 @@
 require 'em-websocket'
 
-$counter = 1
-
 class Message
 end
 
+$debug_counter = 0
 class Connection
+  def initialize(ws)
+    @name = ($debug_counter += 1)
+    @ws = ws
+    #@msg = Message.new
+  end
+
+  # one that actually writes
+  def buffer msg
+  end
+
+  # store this in a buffer
+  def send msg
+    #@msg.merge(msg)
+    @ws.send msg
+  end
+
+  def sync
+    @ws.send @msg unless @msg.empty?
+  end
 end
 
 class Hub
   attr_accessor :connections
 
   def initialize
-    @connections = []
+    @connections = {}
     @counter = 0
   end
 
   def broadcast(msg)
-    connections.each { |s| s[:socket].send msg }
+    connections.each { |ws, c| c.send msg }
   end
 
   def register(ws)
-    connections.push(id: next_id, socket: ws)
+    connections[ws] = Connection.new(ws)
   end
 
   # returns client (hash)
   def unregister(ws)
-    index = connections.index { |i| i[:socket] == ws }
-    connections.delete_at(index)
+    connections.delete(ws)
   end
 
   def next_id
@@ -38,16 +55,27 @@ end
 hub = Hub.new
 
 puts "listening on 8080"
-EventMachine::WebSocket.start(:host => "0.0.0.0", :port => 8080) do |ws|
-  ws.onopen do
-    hub.register(ws)
-  end
 
-  ws.onclose do
-    hub.unregister(ws)
-  end
+# ServeWs, readPump
+#EventMachine::WebSocket.start(:host => "0.0.0.0", :port => 8080) do |ws|
+EM.epoll
+trap("TERM") { EM.stop }
+trap("INT")  { EM.stop }
 
-  ws.onmessage do |msg|
-    hub.broadcast(msg)
+EM.run do
+  #EventMachine::WebSocket.run(:host => "0.0.0.0", :port => 8080) do |ws|
+  EM.start_server("0.0.0.0", 8080, EventMachine::WebSocket::Connection, {}) do |ws|
+    ws.onopen do
+      hub.register(ws)
+    end
+
+    ws.onclose do
+      hub.unregister(ws)
+    end
+
+    # actually in connection readPump
+    ws.onmessage do |msg|
+      hub.broadcast(msg)
+    end
   end
 end
