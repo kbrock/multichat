@@ -22,6 +22,9 @@ var (
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile = flag.String("memprofile", "", "write memory profile to this file")
 	sendFrequency = flag.Duration("sendfrequency", 50 * time.Millisecond, "how often to send messages")
+	slowClient = flag.Int("slow", 0, "every x client is slow (0 = disable)")
+	slowMultiplier = flag.Int("multiplier", 2, "How many frequencies does it sleep?")
+	delay time.Duration
 )
 
 var (
@@ -70,9 +73,9 @@ func createClients() {
 func removeClients() {
 	fmt.Println(*numClients, " clients exiting 0.6s")
 	go sendAll(*numClients, globalStopSendChan)
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond + delay)
 	go sendAll(*numClients, globalStopReadChan)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond + delay)
 }
 
 // send a message to all clients (to say stop sending / stop reading)
@@ -115,6 +118,7 @@ func main() {
 	runtime.GOMAXPROCS(1)
 	//rand.Seed(time.Now().Unix())
 
+	delay = *sendFrequency * time.Duration(*slowMultiplier)
 	createAllCounters()
 	ezprof.StartProfiler(*cpuprofile, *memprofile)
 	createClients()
@@ -126,7 +130,7 @@ func main() {
 
 }
 
-func readPump(ws *websocket.Conn, eCh chan<- error) { //, ch chan[]byte) {
+func readPump(ws *websocket.Conn, eCh chan<- error, id int) { //, ch chan[]byte) {
 	for {
 		if _, data, err := ws.ReadMessage(); err != nil {
 			eCh <- err
@@ -142,6 +146,20 @@ func readPump(ws *websocket.Conn, eCh chan<- error) { //, ch chan[]byte) {
 			<-globalMessageReadChan
 			for i := 0 ; i < xi ; i++ {
 				<-globalMessageCountChan
+			}
+			if (*slowClient != 0 && ((id % *slowClient) == 1)) {
+				//blocking for a slow send
+				if (id < 2) {
+					fmt.Println("sleeping", id, "read", xi)
+				}
+				time.Sleep(delay)
+				if (id < 2) {
+					fmt.Println("slept   ", id)
+				}
+			} else {
+				if (id < 2) {
+					fmt.Println("reading ", id, "read", xi)
+				}
 			}
 			// ch <- slows things down. for metrics remove, for info keep
 			// send data we received
@@ -167,7 +185,7 @@ func createWebSocketClient(id int) {
 	//ch := make(chan []byte)
 	eCh := make(chan error)
 	// read from socket
-	go readPump(ws, eCh) //, ch)
+	go readPump(ws, eCh, id) //, ch)
 
 	// we're going to send 20 times / second
 	sendMessageTimer := time.NewTicker(*sendFrequency) //time.Duration(rand.Int31n(500)) * time.Millisecond)
