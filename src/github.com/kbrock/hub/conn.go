@@ -2,7 +2,7 @@ package hub
 
 import (
 	"github.com/gorilla/websocket"
-	"log"
+	"fmt"
 	"net/http"
 	"time"
 	"strconv"
@@ -18,6 +18,7 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
+	// time to accumulate messages before sending
 	deferPeriod = 250 * time.Millisecond
 
 	// Maximum message size allowed from peer.
@@ -102,7 +103,7 @@ func (c *connection) aggregator() {
 			return
 		}
       msg = msg.Merge(e)
-      if timerCh == nil {
+      if (timerCh == nil && outCh == nil) {
         timer.Reset(deferPeriod)
         timerCh = timer.C
       }
@@ -152,7 +153,7 @@ func ServeWs(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println(err)
+		fmt.Println(err)
 		return
 	}
 	c := NewConnection(ws)
