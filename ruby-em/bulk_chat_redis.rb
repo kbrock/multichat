@@ -1,6 +1,36 @@
 require 'em-websocket'
 require 'em-redis'
 
+class Metrics
+  def connect
+    @@redis = EM::Protocols::Redis.connect
+    @@redis.errback do |code|
+      puts "Redis Error code: #{code}"
+    end
+  end
+
+  def print
+    @@redis.get  "server-received" do |response|
+      puts     "server-received: #{response}"
+      @@redis.get  "server-sent" do |response2|
+        puts     "server-sent: #{response2}"
+        yield if block_given?
+      end
+    end
+  end
+
+  def clear
+    @@redis.set "server-received", 0
+    @@redis.set "server-sent", 0
+  end
+
+  def incr count
+    @@redis.incr "server-received"
+    @@redis.incrby "server-sent", count
+  end
+end
+metrics = Metrics.new
+
 class Message
   attr_accessor :sender, :bytes, :count
   def initialize(sender = nil, bytes = nil)
@@ -74,9 +104,10 @@ end
 class Hub
   attr_accessor :connections
 
-  def initialize
+  def initialize(metrics)
     @connections = {}
     @counter = 0
+    @metrics = metrics
   end
 
   def sync
@@ -84,8 +115,7 @@ class Hub
   end
 
   def broadcast(msg)
-    $redis.incr "server-received"
-    $redis.incrby "server-sent", connections.size
+    @metrics.incr connections.size
     connections.each do |c, b|
       c.send msg
     end
@@ -101,44 +131,41 @@ class Hub
   end
 end
 
-hub = Hub.new
+hub = Hub.new(metrics)
 puts "listening on 8080"
 
 # ServeWs, readPump
 #EventMachine::WebSocket.start(:host => "0.0.0.0", :port => 8080) do |ws|
 
-def on_way_out(stop = true, &block)
-  $redis.get  "server-received" do |response|
-    puts     "server-received: #{response}"
-    $redis.get  "server-sent" do |response2|
-      puts     "server-sent: #{response2}"
-      yield if block_given?
+class Conn < EventMachine::WebSocket::Connection
+  def initialize(options)
+    super
+    @only_one_outbound = options[:only_one_outbound] || false
+    #puts "options: #{options}"
+  end
+
+  def send_data(data)
+    if @only_one_outbound && (get_outbound_data_size > 0)
+      puts "skip"
+      0
+    else
+      super
     end
   end
-  EM.stop if stop
 end
 
+EM.epoll
+trap("TERM") { EM.stop }
+trap("INT")  { EM.stop }
 EM.run do
-  $redis = EM::Protocols::Redis.connect
-  $redis.errback do |code|
-    puts "Error code: #{code}"
-  end
-
-  on_way_out(false) do
-    $redis.set "server-received", 0
-    $redis.set "server-sent", 0
-  end
-
-  EM.epoll
-  trap("TERM") { on_way_out }
-  trap("INT")  { on_way_out }
+  metrics.connect
 
   EM.add_periodic_timer(0.25) do
     hub.sync
   end
 
   #EventMachine::WebSocket.run(:host => "0.0.0.0", :port => 8080) do |ws|
-  EM.start_server("0.0.0.0", 8080, EventMachine::WebSocket::Connection, {}) do |ws|
+  EM.start_server("0.0.0.0", 8080, Conn, only_one_outbound: true) do |ws|
     c = Connection.new(ws)
     ws.onopen do
       hub.register(c)
